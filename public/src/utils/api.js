@@ -85,8 +85,13 @@ api.interceptors.request.use(
           });
         }
       } else {
-        // Log minimal warning for authenticated apps without a session
-        if (!config.url.includes('/auth/login')) {
+        // Public endpoints called before login — no token needed, suppress warning
+        const publicEndpoints = [
+          '/auth/login', '/auth/check-user', '/auth/google-lookup',
+          '/auth/verify-firebase-token', '/auth/register'
+        ];
+        const isPublic = publicEndpoints.some(ep => config.url.includes(ep));
+        if (!isPublic) {
           console.warn(`[API] Token missing for ${config.url}`);
         }
       }

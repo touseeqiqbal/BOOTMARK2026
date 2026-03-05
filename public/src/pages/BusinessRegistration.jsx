@@ -24,24 +24,16 @@ export default function BusinessRegistration() {
   const checkExistingBusiness = async () => {
     try {
       const response = await api.get('/businesses/my-business')
-      // User already has a business, redirect to dashboard
-      if (response.data) {
-        if (response.data.status === 'pending-review') {
-          navigate('/account-review')
-        } else {
-          navigate('/choose-business')
-        }
-      } else {
-        setChecking(false)
+      // Only auto-redirect away if there's a pending review (user can't do anything else)
+      if (response.data && response.data.status === 'pending-review') {
+        navigate('/account-review')
+        return
       }
+      // For active businesses, allow staying — user may want to register a second business
+      setChecking(false)
     } catch (error) {
       // No business found (404) or other error - allow registration
-      if (error.response?.status === 404) {
-        setChecking(false)
-      } else {
-        console.error('Error checking business:', error)
-        setChecking(false)
-      }
+      setChecking(false)
     }
   }
 
@@ -153,7 +145,7 @@ export default function BusinessRegistration() {
           <button
             className="btn btn-primary"
             style={{ marginTop: '24px', width: '100%' }}
-            onClick={() => navigate('/choose-business')}
+            onClick={() => navigate('/account-review')}
           >
             View Review Status
           </button>

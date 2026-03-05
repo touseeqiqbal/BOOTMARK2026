@@ -58,9 +58,6 @@ class BusinessService {
     }
 
     async registerBusiness(userId, businessData) {
-        // Check if user already has a business (optional: could limit to 3-5 for non-enterprise)
-        // For now, we allow expansion.
-
         const name = businessData.name || businessData.businessName || 'Business';
         const slug = await this.generateUniqueSlug(name);
         const businessId = `business_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
@@ -78,12 +75,16 @@ class BusinessService {
 
         await this.setDoc('businesses', businessId, newBusiness);
 
+        // Fetch user to update their profile — user may not have a doc yet if brand-new
+        const user = await this.getDoc('users', userId) || {};
         const updatedUser = {
             ...user,
+            id: userId,
+            uid: userId,
             // If they don't have a businessId yet, make this their primary one
             businessId: user.businessId || businessId,
             accountType: 'business',
-            role: user.role || 'owner', // Preserve existing role if they are already an owner/admin elsewhere
+            role: user.role || 'owner',
             accountStatus: user.accountStatus === 'active' ? 'active' : 'pending-approval',
             updatedAt: new Date().toISOString()
         };
