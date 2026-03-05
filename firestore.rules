@@ -1,0 +1,453 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ═══════════════════════════════════════════
+    //  HELPER FUNCTIONS
+    // ═══════════════════════════════════════════
+
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+
+    // Get user's businessId from their user document
+    function getUserBusinessId() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data.businessId;
+    }
+
+    // Check if user belongs to the specified business
+    function belongsToBusiness(businessId) {
+      return isAuthenticated() && getUserBusinessId() == businessId;
+    }
+
+    // Get user's role from custom claims (set by claimsManager.js)
+    function getUserRole() {
+      return request.auth.token.role;
+    }
+
+    // Check if user has a specific role via custom claims
+    function hasRole(role) {
+      return isAuthenticated() && getUserRole() == role;
+    }
+
+    // Check if user is super admin
+    function isSuperAdmin() {
+      return isAuthenticated() && (
+        getUserRole() == 'super_admin' ||
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.isSuperAdmin == true
+      );
+    }
+
+    // Check if user is a client for a business (via custom claims)
+    function isClientForBusiness(businessId) {
+      return isAuthenticated() &&
+        getUserRole() == 'client' &&
+        request.auth.token.businessId == businessId;
+    }
+
+    // Check if user is admin or owner for a business
+    function isAdminForBusiness(businessId) {
+      return isAuthenticated() && (
+        belongsToBusiness(businessId) && getUserRole() in ['admin', 'owner', 'super_admin']
+      );
+    }
+
+    // Check if user is staff or above for a business
+    function isStaffOrAbove(businessId) {
+      return isAuthenticated() && (
+        belongsToBusiness(businessId) && getUserRole() in ['staff', 'admin', 'owner', 'super_admin']
+      );
+    }
+
+    // ═══════════════════════════════════════════
+    //  USERS (Global)
+    // ═══════════════════════════════════════════
+    match /users/{userId} {
+      allow read: if isOwner(userId) || isSuperAdmin();
+      // Users can update their own non-sensitive fields
+      allow update: if isOwner(userId) && (
+        !request.resource.data.diff(resource.data).affectedKeys()
+          .hasAny(['isSuperAdmin', 'businessId', 'role', 'businessRole', 'permissionsVersion'])
+      );
+      // Creation and sensitive field changes are backend-only
+      allow create, delete: if false;
+
+      // Token refresh sentinel (written by claimsManager.js)
+      match /metadata/{metaId} {
+        allow read: if isOwner(userId);
+        allow write: if false; // Server-side only
+      }
+    }
+
+    // ═══════════════════════════════════════════
+    //  BUSINESSES / TENANTS
+    // ═══════════════════════════════════════════
+    match /businesses/{businessId} {
+      allow read: if isAuthenticated() && (
+        resource.data.ownerId == request.auth.uid ||
+        belongsToBusiness(businessId) ||
+        isClientForBusiness(businessId) ||
+        isSuperAdmin()
+      );
+      allow create: if isAuthenticated() && request.resource.data.ownerId == request.auth.uid;
+      allow update: if isAuthenticated() && (
+        resource.data.ownerId == request.auth.uid ||
+        isAdminForBusiness(businessId) ||
+        isSuperAdmin()
+      );
+      allow delete: if isSuperAdmin();
+    }
+
+    // ═══════════════════════════════════════════
+    //  MEMBERS
+    // ═══════════════════════════════════════════
+    match /members/{memberId} {
+      allow read: if isAuthenticated() && (
+        belongsToBusiness(resource.data.businessId) ||
+        isSuperAdmin()
+      );
+      allow write: if false; // Backend service account only
+    }
+
+    // ═══════════════════════════════════════════
+    //  CUSTOMERS / CLIENTS
+    // ═══════════════════════════════════════════
+    match /customers/{customerId} {
+      allow read: if isAuthenticated() && (
+        isStaffOrAbove(resource.data.businessId) ||
+        // Client portal: can read own record
+        (isClientForBusiness(resource.data.businessId) &&
+         resource.data.linkedUserId == request.auth.uid) ||
+        isSuperAdmin()
+      );
+      allow create: if isAuthenticated() && (
+        isStaffOrAbove(request.resource.data.businessId) ||
+        isSuperAdmin()
+      );
+      allow update: if isAuthenticated() && (
+        isStaffOrAbove(resource.data.businessId) ||
+        isSuperAdmin()
+      );
+      allow delete: if isAuthenticated() && (
+        isAdminForBusiness(resource.data.businessId) ||
+        isSuperAdmin()
+      );
+    }
+
+    // ═══════════════════════════════════════════
+    //  FORMS
+    // ═══════════════════════════════════════════
+    match /forms/{formId} {
+      allow read: if isAuthenticated() && (
+        resource.data.userId == request.auth.uid ||
+        isStaffOrAbove(resource.data.businessId) ||
+        isSuperAdmin()
+      );
+      allow create: if isAuthenticated() && (
+        request.resource.data.userId == request.auth.uid ||
+        isStaffOrAbove(request.resource.data.businessId)
+      );
+      allow update, delete: if isAuthenticated() && (
+        resource.data.userId == request.auth.uid ||
+        isStaffOrAbove(resource.data.businessId) ||
+        isSuperAdmin()
+      );
+    }
+
+    // ═══════════════════════════════════════════
+    //  SUBMISSIONS (supports public form submissions)
+    // ═══════════════════════════════════════════
+    match /submissions/{submissionId} {
+      allow create: if request.resource.data.formId is string
+                    && request.resource.data.formId.size() > 0
+                    && request.resource.data.businessId is string
+                    && get(/databases/$(database)/documents/forms/$(request.resource.data.formId)).data.businessId == request.resource.data.businessId;
+      // Staff can read all, clients can read their own
+      allow read: if isAuthenticated() && (
+        resource.data.userId == request.auth.uid ||
+        isStaffOrAbove(resource.data.businessId) ||
+        (isClientForBusiness(resource.data.businessId) &&
+         resource.data.submittedBy == request.auth.uid) ||
+        isSuperAdmin()
+      );
+      allow update, delete: if isAuthenticated() && (
+        isAdminForBusiness(resource.data.businessId) ||
+        isSuperAdmin()
+      );
+    }
+
+    // ═══════════════════════════════════════════
+    //  INVOICES
+    // ═══════════════════════════════════════════
+    match /invoices/{invoiceId} {
+      allow read: if isAuthenticated() && (
+        resource.data.userId == request.auth.uid ||
+        isStaffOrAbove(resource.data.businessId) ||
+        isClientForBusiness(resource.data.businessId) ||
+        isSuperAdmin()
+      );
+      allow create: if isAuthenticated() && (
+        request.resource.data.userId == request.auth.uid ||
+        isStaffOrAbove(request.resource.data.businessId)
+      );
+      allow update: if isAuthenticated() && (
+        resource.data.userId == request.auth.uid ||
+        isStaffOrAbove(resource.data.businessId) ||
+        isSuperAdmin()
+      );
+      allow delete: if isAuthenticated() && (
+        isAdminForBusiness(resource.data.businessId) ||
+        isSuperAdmin()
+      );
+    }
+
+    // ═══════════════════════════════════════════
+    //  PAYMENTS (Server-side creation only)
+    // ═══════════════════════════════════════════
+    match /payments/{paymentId} {
+      allow read: if isAuthenticated() && (
+        isStaffOrAbove(resource.data.businessId) ||
+        isClientForBusiness(resource.data.businessId) ||
+        isSuperAdmin()
+      );
+      // Payments are ONLY created/updated by backend (PaymentService)
+      allow create, update, delete: if false;
+    }
+
+    // ═══════════════════════════════════════════
+    //  WORK ORDERS
+    // ═══════════════════════════════════════════
+    match /workOrders/{orderId} {
+      allow read: if isAuthenticated() && (
+        isStaffOrAbove(resource.data.businessId) ||
+        // Client can read their work orders (internalNotes filtered by backend)
+        isClientForBusiness(resource.data.businessId) ||
+        isSuperAdmin()
+      );
+      allow create: if isAuthenticated() && (
+        isStaffOrAbove(request.resource.data.businessId) ||
+        isSuperAdmin()
+      );
+      allow update: if isAuthenticated() && (
+        isStaffOrAbove(resource.data.businessId) ||
+        isSuperAdmin()
+      );
+      allow delete: if isAuthenticated() && (
+        isAdminForBusiness(resource.data.businessId) ||
+        isSuperAdmin()
+      );
+    }
+
+    // ═══════════════════════════════════════════
+    //  ESTIMATES
+    // ═══════════════════════════════════════════
+    match /estimates/{estimateId} {
+      allow read, write: if isAuthenticated() && (
+        resource.data.userId == request.auth.uid ||
+        isStaffOrAbove(resource.data.businessId) ||
+        isSuperAdmin()
+      );
+    }
+
+    // ═══════════════════════════════════════════
+    //  CONTRACTS
+    // ═══════════════════════════════════════════
+    match /contracts/{contractId} {
+      allow read: if isAuthenticated() && (
+        isStaffOrAbove(resource.data.businessId) ||
+        // Client can read their own contracts
+        isClientForBusiness(resource.data.businessId) ||
+        isSuperAdmin()
+      );
+      allow create: if isAuthenticated() && (
+        isStaffOrAbove(request.resource.data.businessId) ||
+        isSuperAdmin()
+      );
+      allow update: if isAuthenticated() && (
+        isStaffOrAbove(resource.data.businessId) ||
+        isSuperAdmin()
+      );
+      allow delete: if isAuthenticated() && (
+        isAdminForBusiness(resource.data.businessId) ||
+        isSuperAdmin()
+      );
+    }
+
+    // ═══════════════════════════════════════════
+    //  SERVICES, PRODUCTS, MATERIALS
+    // ═══════════════════════════════════════════
+    match /services/{serviceId} {
+      allow read: if isAuthenticated() && (
+        resource.data.userId == request.auth.uid ||
+        isStaffOrAbove(resource.data.businessId) ||
+        isSuperAdmin()
+      );
+      allow create: if isAuthenticated() && (
+        request.resource.data.userId == request.auth.uid ||
+        isStaffOrAbove(request.resource.data.businessId)
+      );
+      allow update, delete: if isAuthenticated() && (
+        resource.data.userId == request.auth.uid ||
+        isStaffOrAbove(resource.data.businessId) ||
+        isSuperAdmin()
+      );
+    }
+
+    match /products/{productId} {
+      allow read: if isAuthenticated() && (
+        isStaffOrAbove(resource.data.businessId) || isSuperAdmin()
+      );
+      allow write: if isAuthenticated() && (
+        isStaffOrAbove(resource.data.businessId) || isSuperAdmin()
+      );
+    }
+
+    match /materials/{materialId} {
+      allow read: if isAuthenticated() && (
+        isStaffOrAbove(resource.data.businessId) || isSuperAdmin()
+      );
+      allow write: if isAuthenticated() && (
+        isStaffOrAbove(resource.data.businessId) || isSuperAdmin()
+      );
+    }
+
+    // ═══════════════════════════════════════════
+    //  WORKFLOWS & SCHEDULE
+    // ═══════════════════════════════════════════
+    match /workflows/{workflowId} {
+      allow read, write: if isAuthenticated() && (
+        isStaffOrAbove(resource.data.businessId) || isSuperAdmin()
+      );
+    }
+
+    match /schedule/{eventId} {
+      allow read, write: if isAuthenticated() && (
+        isStaffOrAbove(resource.data.businessId) || isSuperAdmin()
+      );
+    }
+
+    // ═══════════════════════════════════════════
+    //  INVITES
+    // ═══════════════════════════════════════════
+    match /invites/{inviteId} {
+      allow read: if isAuthenticated() && (
+        resource.data.userId == request.auth.uid ||
+        belongsToBusiness(resource.data.businessId) ||
+        isSuperAdmin()
+      );
+      allow create: if isAuthenticated();
+      allow update, delete: if isAuthenticated() && (
+        resource.data.userId == request.auth.uid ||
+        isAdminForBusiness(resource.data.businessId) ||
+        isSuperAdmin()
+      );
+    }
+
+    // ═══════════════════════════════════════════
+    //  FORM TEMPLATES
+    // ═══════════════════════════════════════════
+    match /formTemplates/{templateId} {
+      allow read: if isAuthenticated() && (
+        resource.data.userId == request.auth.uid ||
+        belongsToBusiness(resource.data.businessId) ||
+        isSuperAdmin()
+      );
+      allow create: if isAuthenticated() && request.resource.data.userId == request.auth.uid;
+      allow update, delete: if isAuthenticated() && (
+        resource.data.userId == request.auth.uid ||
+        isAdminForBusiness(resource.data.businessId) ||
+        isSuperAdmin()
+      );
+    }
+
+    // ═══════════════════════════════════════════
+    //  NOTIFICATIONS
+    // ═══════════════════════════════════════════
+    match /notifications/{notifId} {
+      // Users can read/update their own notifications
+      allow read: if isAuthenticated() && (
+        resource.data.recipientId == request.auth.uid ||
+        resource.data.userId == request.auth.uid ||
+        isSuperAdmin()
+      );
+      // Users can mark their own notifications as read
+      allow update: if isAuthenticated() && (
+        resource.data.recipientId == request.auth.uid ||
+        resource.data.userId == request.auth.uid
+      );
+      // Only backend creates/deletes notifications
+      allow create, delete: if false;
+    }
+
+    // ═══════════════════════════════════════════
+    //  AUDIT LOGS (IMMUTABLE — Append-Only)
+    // ═══════════════════════════════════════════
+    match /auditLogs/{logId} {
+      // Only admin+ can read audit logs for their business
+      allow read: if isAuthenticated() && (
+        isAdminForBusiness(resource.data.businessId) ||
+        isSuperAdmin()
+      );
+      // IMMUTABLE: No create, update, or delete from client
+      // All writes are server-side only (EnhancedAuditService.js)
+      allow create: if false;
+      allow update: if false;
+      allow delete: if false;
+    }
+
+    // ═══════════════════════════════════════════
+    //  PLANS (Subscription Tiers)
+    // ═══════════════════════════════════════════
+    match /plans/{planId} {
+      allow read: if isAuthenticated();
+      allow write: if isSuperAdmin();
+    }
+
+    // ═══════════════════════════════════════════
+    //  WEBHOOKS (Diagnostic Ingestion — Backend Only)
+    // ═══════════════════════════════════════════
+    match /webhooks/{webhookId} {
+      allow read, write: if false;
+    }
+
+    // ═══════════════════════════════════════════
+    //  PAYMENT ATTEMPTS (Audit — Backend Only)
+    // ═══════════════════════════════════════════
+    match /paymentAttempts/{attemptId} {
+      allow read, write: if false;
+    }
+
+    // ═══════════════════════════════════════════
+    //  PLATFORM CONFIG & GLOBALS (Super Admin Only)
+    // ═══════════════════════════════════════════
+    match /platform/{docId} {
+      allow read, write: if isSuperAdmin();
+    }
+
+    // ═══════════════════════════════════════════
+    //  PLATFORM AUDIT LOGS (Super Admin Only, Immutable)
+    // ═══════════════════════════════════════════
+    match /platformAuditLogs/{logId} {
+      allow read: if isSuperAdmin();
+      allow create, update, delete: if false; // Server-side only
+    }
+
+    // ═══════════════════════════════════════════
+    //  MFA SECRETS (System Only — Never Exposed to Frontend)
+    // ═══════════════════════════════════════════
+    match /mfaSecrets/{userId} {
+      allow read, write: if false; // Absolute isolation
+    }
+
+    // ═══════════════════════════════════════════
+    //  DEFAULT: DENY ALL UNLISTED COLLECTIONS
+    // ═══════════════════════════════════════════
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}
