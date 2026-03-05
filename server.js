@@ -9,15 +9,24 @@ if (process.env.NODE_ENV !== 'production') {
 }
 
 // SECURITY: Validate critical environment variables on startup
-const REQUIRED_ENV_VARS = [
-  'SESSION_SECRET',
-  'JWT_SECRET',
-  'FIREBASE_PROJECT_ID',
-  'FIREBASE_CLIENT_EMAIL',
-  'FIREBASE_PRIVATE_KEY'
+// Firebase credentials can be supplied in three ways (checked in priority order):
+//   1. FIREBASE_SERVICE_ACCOUNT  — full service-account JSON as a single-line string (Render / Vercel)
+//   2. firebase-service-account.json — file in the project root (local dev)
+//   3. Individual vars: FIREBASE_PROJECT_ID + FIREBASE_CLIENT_EMAIL + FIREBASE_PRIVATE_KEY
+
+const _hasServiceAccountBlob = !!process.env.FIREBASE_SERVICE_ACCOUNT;
+const _hasServiceAccountFile = (() => { try { return require('fs').existsSync(require('path').join(__dirname, 'firebase-service-account.json')); } catch { return false; } })();
+const _hasFirebaseCredentials = _hasServiceAccountBlob || _hasServiceAccountFile;
+
+// Only require the individual vars when the blob/file alternatives are absent
+const REQUIRED_ALWAYS = ['SESSION_SECRET', 'JWT_SECRET'];
+const REQUIRED_IF_NO_BLOB = ['FIREBASE_PROJECT_ID', 'FIREBASE_CLIENT_EMAIL', 'FIREBASE_PRIVATE_KEY'];
+
+const missingVars = [
+  ...REQUIRED_ALWAYS.filter(v => !process.env[v]),
+  ...(_hasFirebaseCredentials ? [] : REQUIRED_IF_NO_BLOB.filter(v => !process.env[v]))
 ];
 
-const missingVars = REQUIRED_ENV_VARS.filter(v => !process.env[v]);
 if (missingVars.length > 0) {
   const isProd = process.env.NODE_ENV === 'production';
   const errorMessage = `CRITICAL CONFIGURATION ERROR: Missing required environment variables: ${missingVars.join(', ')}`;
@@ -32,6 +41,14 @@ if (missingVars.length > 0) {
     console.warn('\x1b[33m%s\x1b[0m', 'Using default/insecure values for development. DO NOT DEPLOY TO PRODUCTION LIKE THIS.');
     console.warn('\x1b[33m%s\x1b[0m', '--- ------------------------------ ---');
   }
+}
+
+if (_hasServiceAccountBlob) {
+  console.log('✅ Firebase credentials: FIREBASE_SERVICE_ACCOUNT environment variable');
+} else if (_hasServiceAccountFile) {
+  console.log('✅ Firebase credentials: firebase-service-account.json file');
+} else {
+  console.log('✅ Firebase credentials: individual FIREBASE_* environment variables');
 }
 
 const express = require("express");
