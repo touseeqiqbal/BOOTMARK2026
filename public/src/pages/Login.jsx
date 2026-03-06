@@ -4,6 +4,7 @@ import { useTranslation } from 'react-i18next'
 import { useAuth } from '../utils/AuthContext'
 import api from '../utils/api'
 import { AlertCircle, Mail, CheckCircle } from 'lucide-react'
+import logo from '../assets/logo.png'
 import LanguageSwitcher from '../components/LanguageSwitcher'
 import { validateEmail, validateRequired } from '../utils/formValidation'
 export default function Login() {
@@ -173,6 +174,9 @@ export default function Login() {
 
 
       <div className="auth-card">
+        <div style={{ display: 'flex', justifyContent: 'center', marginBottom: '12px' }}>
+          <img src={logo} alt="Bootmark" style={{ height: '64px', objectFit: 'contain' }} />
+        </div>
         <h1>{t('auth.signInTitle')}</h1>
         <p className="auth-subtitle">{t('auth.signInSubtitle')}</p>
 

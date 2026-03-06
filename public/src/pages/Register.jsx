@@ -2,9 +2,10 @@ import { useState, useEffect } from 'react'
 import { useNavigate, Link, useLocation } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import { useAuth } from '../utils/AuthContext'
-import { Chrome, Mail, CheckCircle, AlertCircle } from 'lucide-react'
+import { Mail, CheckCircle, AlertCircle } from 'lucide-react'
 import LanguageSwitcher from '../components/LanguageSwitcher'
 import { validatePassword, getPasswordStrength } from '../utils/formValidation'
+import logo from '../assets/logo.png'
 export default function Register() {
   const [name, setName] = useState('')
   const [email, setEmail] = useState('')
@@ -94,6 +95,9 @@ export default function Register() {
         <LanguageSwitcher />
       </div>
       <div className="auth-card">
+        <div style={{ display: 'flex', justifyContent: 'center', marginBottom: '12px' }}>
+          <img src={logo} alt="Bootmark" style={{ height: '64px', objectFit: 'contain' }} />
+        </div>
         <h1>Create your Business Account</h1>
         <p className="auth-subtitle">Start managing your field service business with BOOTMARK</p>
 
@@ -246,18 +250,7 @@ export default function Register() {
               </button>
             </form>
 
-            <div className="auth-divider">
-              <span>{t('auth.orContinueWith')}</span>
-            </div>
 
-            <button
-              className="btn btn-google"
-              onClick={handleGoogleLogin}
-              disabled={loading}
-            >
-              <Chrome size={18} />
-              {t('auth.signUpWith')} {t('auth.google')}
-            </button>
           </>
         )}
 
