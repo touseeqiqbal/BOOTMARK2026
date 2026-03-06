@@ -114,6 +114,11 @@ const logger = require("./utils/logger"); // NEW: Structured logging
 const app = express();
 const PORT = process.env.PORT || 4000;
 
+// Trust the first hop from Render's / any cloud provider's reverse proxy.
+// This ensures req.ip reflects the real client IP (from X-Forwarded-For)
+// and fixes the ERR_ERL_UNEXPECTED_X_FORWARDED_FOR rate-limiter error.
+app.set('trust proxy', 1);
+
 // Configure CORS to allow credentials (cookies)
 const corsOrigin = process.env.CORS_ORIGIN
   ? process.env.CORS_ORIGIN.split(',')

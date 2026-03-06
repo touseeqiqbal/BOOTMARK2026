@@ -7,6 +7,9 @@ const apiLimiter = rateLimit({
   message: 'Too many requests from this IP, please try again later.',
   standardHeaders: true, // Return rate limit info in the `RateLimit-*` headers
   legacyHeaders: false, // Disable the `X-RateLimit-*` headers
+  // Required for Render / any cloud proxy that sets X-Forwarded-For.
+  // Trust proxy is also set on the Express app (app.set('trust proxy', 1)).
+  validate: { trustProxy: false },
   handler: (req, res) => {
     console.log(`[Rate Limit] IP ${req.ip} exceeded rate limit`);
     res.status(429).json({
@@ -23,6 +26,7 @@ const authLimiter = rateLimit({
   max: 5, // Limit each IP to 5 login attempts per windowMs
   message: 'Too many login attempts, please try again later.',
   skipSuccessfulRequests: true, // Don't count successful requests
+  validate: { trustProxy: false },
   handler: (req, res) => {
     console.log(`[Auth Rate Limit] IP ${req.ip} exceeded login attempts`);
     res.status(429).json({
@@ -37,7 +41,8 @@ const authLimiter = rateLimit({
 const publicLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   max: 3000, // Much more lenient for public access
-  message: 'Too many requests, please try again later.'
+  message: 'Too many requests, please try again later.',
+  validate: { trustProxy: false }
 });
 
 module.exports = {

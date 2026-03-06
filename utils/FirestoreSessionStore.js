@@ -56,9 +56,18 @@ class FirestoreSessionStore {
                     ? new Date(session.cookie.expires).getTime()
                     : Date.now() + 60 * 24 * 60 * 60 * 1000; // 60 days default
 
+                // IMPORTANT: Firestore cannot serialize objects with custom prototypes
+                // (e.g. express-session's `Session` class). Convert to a plain object first.
+                let plainSession;
+                try {
+                    plainSession = JSON.parse(JSON.stringify(session));
+                } catch (e) {
+                    return callback(new Error('Session serialization failed: ' + e.message));
+                }
+
                 getCollectionRef(COLLECTION)
                     .doc(sid)
-                    .set({ session, expires, updatedAt: Date.now() })
+                    .set({ session: plainSession, expires, updatedAt: Date.now() })
                     .then(() => callback(null))
                     .catch(err => callback(err));
             }
