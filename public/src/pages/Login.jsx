@@ -4,7 +4,7 @@ import { useTranslation } from 'react-i18next'
 import { useAuth } from '../utils/AuthContext'
 import api from '../utils/api'
 import { AlertCircle, Mail, CheckCircle } from 'lucide-react'
-import logo from '../assets/logo.png'
+import logo from '../assets/logo.svg'
 import LanguageSwitcher from '../components/LanguageSwitcher'
 import { validateEmail, validateRequired } from '../utils/formValidation'
 export default function Login() {

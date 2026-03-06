@@ -5,7 +5,7 @@ import { useAuth } from '../utils/AuthContext'
 import { Mail, CheckCircle, AlertCircle } from 'lucide-react'
 import LanguageSwitcher from '../components/LanguageSwitcher'
 import { validatePassword, getPasswordStrength } from '../utils/formValidation'
-import logo from '../assets/logo.png'
+import logo from '../assets/logo.svg'
 export default function Register() {
   const [name, setName] = useState('')
   const [email, setEmail] = useState('')
