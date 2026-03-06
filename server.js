@@ -137,8 +137,20 @@ app.use(compression());
 app.use(requestId);
 app.use(cookieParser());
 
-// Configure session middleware
+// Configure session middleware with Firestore-backed store (production-safe)
+// Falls back to MemoryStore only if Firestore is not available (e.g. local dev without credentials)
+let sessionStore;
+try {
+  const FirestoreSessionStore = require('./utils/FirestoreSessionStore');
+  const FSStore = new FirestoreSessionStore(session);
+  sessionStore = new FSStore();
+  console.log('✅ Session store: Firestore');
+} catch (e) {
+  console.warn('⚠️  Session store: MemoryStore (Firestore unavailable):', e.message);
+}
+
 app.use(session({
+  store: sessionStore, // undefined = default MemoryStore (dev only)
   secret: process.env.SESSION_SECRET || process.env.JWT_SECRET || "development-session-secret-change-in-production",
   resave: false,
   saveUninitialized: false,

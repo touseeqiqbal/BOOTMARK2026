@@ -6,8 +6,12 @@ export default function AccountReview() {
   const navigate = useNavigate()
   const [refreshing, setRefreshing] = useState(false)
 
-  // Redirect if status becomes active
+  // Super admins should never be stuck here — send them straight to admin
   useEffect(() => {
+    if (user?.isSuperAdmin) {
+      navigate('/admin/dashboard')
+      return
+    }
     if (user?.accountStatus === 'active') {
       navigate('/dashboard')
     }

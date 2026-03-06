@@ -99,7 +99,13 @@ export default function Login() {
         const accountRole = accountResponse.data?.role || 'user'
         const accountStatus = accountResponse.data?.accountStatus
 
-        // Check Account Status
+        // Check Account Status — super admins bypass this gate entirely
+        const isSuperAdmin = accountResponse.data?.isSuperAdmin
+        if (isSuperAdmin) {
+          setTimeout(() => { navigate('/admin/dashboard') }, 200)
+          setLoading(false)
+          return
+        }
         if (accountStatus && accountStatus !== 'active') {
           navigate('/account-review')
           setLoading(false)
