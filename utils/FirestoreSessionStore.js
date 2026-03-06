@@ -31,7 +31,7 @@ class FirestoreSessionStore {
             }
 
             /** Retrieve a session by sid */
-            get(sid, callback) {
+            get(sid, callback = () => { }) {
                 const { getCollectionRef } = this._getDb();
                 getCollectionRef(COLLECTION)
                     .doc(sid)
@@ -41,7 +41,7 @@ class FirestoreSessionStore {
                         const data = doc.data();
                         // Check expiry
                         if (data.expires && Date.now() > data.expires) {
-                            this.destroy(sid, () => { });
+                            this.destroy(sid);
                             return callback(null, null);
                         }
                         callback(null, data.session);
@@ -50,7 +50,7 @@ class FirestoreSessionStore {
             }
 
             /** Save / update a session */
-            set(sid, session, callback) {
+            set(sid, session, callback = () => { }) {
                 const { getCollectionRef } = this._getDb();
                 const expires = session.cookie?.expires
                     ? new Date(session.cookie.expires).getTime()
@@ -73,7 +73,7 @@ class FirestoreSessionStore {
             }
 
             /** Destroy a session */
-            destroy(sid, callback) {
+            destroy(sid, callback = () => { }) {
                 const { getCollectionRef } = this._getDb();
                 getCollectionRef(COLLECTION)
                     .doc(sid)
@@ -83,7 +83,7 @@ class FirestoreSessionStore {
             }
 
             /** Touch (refresh expiry) */
-            touch(sid, session, callback) {
+            touch(sid, session, callback = () => { }) {
                 this.set(sid, session, callback);
             }
         }
